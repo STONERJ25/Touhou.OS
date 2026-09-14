@@ -27,7 +27,7 @@ The execution-policy setting applies only to the current PowerShell session. The
 
 ## Disclaimer
 
-This is largely Vibe/AI coded, I do not claim any of this code is original to myself, nor do I intend this to be taken in anyway seriously. I mean this as a an fun educational experience for myself and nothing else.
+This is largely Vibe/AI coded, I do not claim any of this code is original to myself, nor do I intend this to be taken in anyway seriously. I mean this as a fun educational experience for myself and nothing else.
 
 ### Code and use
 

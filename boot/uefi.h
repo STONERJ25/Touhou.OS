@@ -78,8 +78,8 @@ typedef struct {
     UINT32               Type;
     EFI_PHYSICAL_ADDRESS PhysicalStart;
     EFI_VIRTUAL_ADDRESS  VirtualStart;
-    UINT64                NumberOfPages;
-    UINT64                Attribute;
+    UINT64               NumberOfPages;
+    UINT64               Attribute;
 } EFI_MEMORY_DESCRIPTOR;
 
 typedef EFI_STATUS (EFIAPI *EFI_GET_MEMORY_MAP)(

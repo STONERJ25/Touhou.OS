@@ -5,6 +5,7 @@
 #include "serial.h"
 #include "memmap.h"
 #include "reboot.h"
+#include "idt.h"
 #include "gapsh.h"
 
 /* No heap allocator exists yet, so this is a fixed-size static reservation
@@ -47,8 +48,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
         fill_rect(framebuffer, stride, 632, 200, 16, 60, 90, 50, 20); /* stem */
         fill_circle(framebuffer, stride, 668, 210, 22, 30, 130, 30);  /* leaf */
 
-        int   exited        = 0;
-        UINTN mapSize       = 0;
+        int   exited         = 0;
+        UINTN mapSize        = 0;
         UINTN descriptorSize = 0;
 
         for (int attempt = 0; attempt < 3; attempt++) {
@@ -84,6 +85,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
             console_init(framebuffer, stride, width, height);
             console_set_color(255, 255, 255);
             console_set_background(20, 160, 60); /* matches the green fill above -- scroll/backspace clear to this now, not black */
+
+            idt_init(); /* after console_init, since the handler panics (prints) */
 
             /* A second, independent output path -- no framebuffer, no GOP,
              * just I/O ports. Visible in the terminal, not the QEMU window. */

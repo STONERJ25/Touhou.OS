@@ -25,10 +25,18 @@ static void cmd_help(void) {
     console_print("  MEMMAP   SHOW THE UEFI MEMORY MAP\n");
     console_print("  CPUINFO  SHOW CPU VENDOR AND SIGNATURE\n");
     console_print("  REBOOT   RESET THE MACHINE\n");
+    console_print("  CRASH    TRIGGER A REAL CPU DIVIDE BY ZERO\n");
 }
 
 static void cmd_version(void) {
     console_print("TOUHOUOS GENSOKYO KERNEL 0.0.1\n");
+}
+
+static void cmd_crash(void) {
+    console_print("TRIGGERING A REAL DIVIDE BY ZERO...\n");
+    volatile int zero = 0; /* volatile -- stops the compiler folding this into a compile-time error */
+    int result = 42 / zero;
+    console_print_uint((UINT32)result); /* never reached */
 }
 
 /* Unpacks a little-endian 32-bit register into 4 ASCII characters --
@@ -93,6 +101,8 @@ void gapsh_run(void) {
         } else if (str_equals(line, "REBOOT")) {
             console_print("REBOOTING...\n");
             reboot_now();
+        } else if (str_equals(line, "CRASH")) {
+            cmd_crash();
         } else {
             console_print("UNKNOWN COMMAND: ");
             console_print(line);
