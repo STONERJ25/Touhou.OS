@@ -64,12 +64,30 @@ typedef EFI_STATUS (EFIAPI *EFI_LOCATE_PROTOCOL)(
     void    **Interface
 );
 
+typedef UINT64 EFI_PHYSICAL_ADDRESS;
+typedef UINT64 EFI_VIRTUAL_ADDRESS;
+
+/*
+ * One entry in a UEFI memory map. IMPORTANT: the real stride between
+ * consecutive entries in a memory map buffer is NOT sizeof(this struct) --
+ * the spec explicitly allows descriptors to grow in future revisions, so
+ * code must always use the DescriptorSize value GetMemoryMap itself
+ * returns to step between entries.
+ */
+typedef struct {
+    UINT32               Type;
+    EFI_PHYSICAL_ADDRESS PhysicalStart;
+    EFI_VIRTUAL_ADDRESS  VirtualStart;
+    UINT64                NumberOfPages;
+    UINT64                Attribute;
+} EFI_MEMORY_DESCRIPTOR;
+
 typedef EFI_STATUS (EFIAPI *EFI_GET_MEMORY_MAP)(
-    UINTN  *MemoryMapSize,
-    void   *MemoryMap,       /* opaque for now -- EFI_MEMORY_DESCRIPTOR is typed later, for the physical allocator */
-    UINTN  *MapKey,
-    UINTN  *DescriptorSize,
-    UINT32 *DescriptorVersion
+    UINTN                  *MemoryMapSize,
+    EFI_MEMORY_DESCRIPTOR  *MemoryMap,
+    UINTN                  *MapKey,
+    UINTN                  *DescriptorSize,
+    UINT32                 *DescriptorVersion
 );
 
 typedef EFI_STATUS (EFIAPI *EFI_EXIT_BOOT_SERVICES)(
@@ -105,6 +123,34 @@ typedef struct {
     /* InstallMultipleProtocolInterfaces onward: not declared, we never reach past LocateProtocol */
 } EFI_BOOT_SERVICES;
 
+#define EfiResetCold             0
+#define EfiResetWarm             1
+#define EfiResetShutdown         2
+#define EfiResetPlatformSpecific 3
+
+typedef void (EFIAPI *EFI_RESET_SYSTEM)(
+    UINT32     ResetType,
+    EFI_STATUS ResetStatus,
+    UINTN      DataSize,
+    void      *ResetData
+);
+
+typedef struct {
+    EFI_TABLE_HEADER Hdr;
+
+    /* Same "preserve size/order only" technique as EFI_BOOT_SERVICES,
+     * grouped to match the spec's own named subsections -- just a much
+     * shorter table this time (10 fields to skip instead of 37). */
+    void *_timeServices[4];           /* GetTime, SetTime, GetWakeupTime, SetWakeupTime */
+    void *_virtualMemoryServices[2];  /* SetVirtualAddressMap, ConvertPointer */
+    void *_variableServices[3];       /* GetVariable, GetNextVariableName, SetVariable */
+    void *_miscServices[1];           /* GetNextHighMonotonicCount */
+
+    EFI_RESET_SYSTEM ResetSystem;     /* the one service we actually call */
+
+    /* UpdateCapsule onward: not declared, we never reach past ResetSystem */
+} EFI_RUNTIME_SERVICES;
+
 typedef struct {
     EFI_TABLE_HEADER                 Hdr;
     CHAR16                           *FirmwareVendor;
@@ -115,13 +161,11 @@ typedef struct {
     EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL  *ConOut;
     EFI_HANDLE                        StandardErrorHandle;
     void                             *StdErr;
-    void                             *RuntimeServices;
+    EFI_RUNTIME_SERVICES             *RuntimeServices;
     EFI_BOOT_SERVICES                *BootServices;
     UINTN                             NumberOfTableEntries;
     void                             *ConfigurationTable;
 } EFI_SYSTEM_TABLE;
-
-typedef UINT64 EFI_PHYSICAL_ADDRESS;
 
 #define PixelRedGreenBlueReserved8BitPerColor  0
 #define PixelBlueGreenRedReserved8BitPerColor  1

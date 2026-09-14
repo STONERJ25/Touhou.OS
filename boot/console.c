@@ -1,8 +1,9 @@
 #include "console.h"
 #include "graphics.h"
 #include "font.h"
+#include "keyboard.h"
 
-#define CONSOLE_SCALE 8                    /* smaller than earlier demos, to fit more text on screen */
+#define CONSOLE_SCALE 4                    /* half the earlier scale -- roughly 4x more character cells */
 #define CHAR_ADVANCE  (9 * CONSOLE_SCALE)   /* 8 glyph columns + 1 gap column, scaled up */
 #define LINE_HEIGHT   (8 * CONSOLE_SCALE)   /* 8 glyph rows, scaled up */
 
@@ -21,6 +22,7 @@ static UINT32  g_rows;
 static UINT32  g_cursorCol;
 static UINT32  g_cursorRow;
 static UINT8   g_r = 255, g_g = 255, g_b = 255; /* default: white text */
+static UINT8   g_bgR = 0, g_bgG = 0, g_bgB = 0;  /* default: black background */
 
 void console_init(UINT8 *framebuffer, UINT32 stride, UINT32 screenWidth, UINT32 screenHeight) {
     g_framebuffer  = framebuffer;
@@ -39,6 +41,18 @@ void console_set_color(UINT8 r, UINT8 g, UINT8 b) {
     g_b = b;
 }
 
+void console_set_background(UINT8 r, UINT8 g, UINT8 b) {
+    g_bgR = r;
+    g_bgG = g;
+    g_bgB = b;
+}
+
+void console_clear(void) {
+    fill_rect(g_framebuffer, g_stride, 0, 0, (INT32)g_screenWidth, (INT32)g_screenHeight, g_bgR, g_bgG, g_bgB);
+    g_cursorCol = 0;
+    g_cursorRow = 0;
+}
+
 static void console_scroll(void) {
     UINT32 lineBytes   = LINE_HEIGHT * g_stride * 4;
     UINT32 screenBytes = g_screenHeight * g_stride * 4;
@@ -53,7 +67,7 @@ static void console_scroll(void) {
 
     /* Clear the newly-exposed last line so old pixels don't linger there. */
     fill_rect(g_framebuffer, g_stride, 0, (INT32)(g_screenHeight - LINE_HEIGHT),
-              (INT32)g_screenWidth, (INT32)LINE_HEIGHT, 0, 0, 0);
+              (INT32)g_screenWidth, (INT32)LINE_HEIGHT, g_bgR, g_bgG, g_bgB);
 }
 
 static void console_newline(void) {
@@ -66,9 +80,29 @@ static void console_newline(void) {
     }
 }
 
+static void console_backspace(void) {
+    /* Only erases within the current line -- at column 0 this does nothing,
+     * rather than reaching back into the previous line (which would need
+     * tracking how long that line was, which nothing does yet). */
+    if (g_cursorCol == 0) {
+        return;
+    }
+
+    g_cursorCol--;
+
+    INT32 x = (INT32)(g_cursorCol * CHAR_ADVANCE);
+    INT32 y = (INT32)(g_cursorRow * LINE_HEIGHT);
+    fill_rect(g_framebuffer, g_stride, x, y, CHAR_ADVANCE, LINE_HEIGHT, g_bgR, g_bgG, g_bgB);
+}
+
 void console_putchar(char c) {
     if (c == '\n') {
         console_newline();
+        return;
+    }
+
+    if (c == '\b') {
+        console_backspace();
         return;
     }
 
@@ -110,4 +144,69 @@ void console_print(const char *text) {
 
         text += wordLength;
     }
+}
+
+void console_print_uint(UINT64 value) {
+    char buffer[21]; /* UINT64 max is 20 digits, plus a null terminator */
+    int i = 20;
+    buffer[20] = 0;
+
+    if (value == 0) {
+        buffer[--i] = '0';
+    } else {
+        while (value > 0) {
+            buffer[--i] = (char)('0' + (value % 10));
+            value /= 10;
+        }
+    }
+
+    console_print(&buffer[i]);
+}
+
+void console_print_hex(UINT64 value) {
+    static const char *digits = "0123456789ABCDEF";
+    char buffer[17]; /* 16 hex digits for a UINT64, plus a null terminator */
+    int i = 16;
+    buffer[16] = 0;
+
+    if (value == 0) {
+        buffer[--i] = '0';
+    } else {
+        while (value > 0) {
+            buffer[--i] = digits[value % 16];
+            value /= 16;
+        }
+    }
+
+    console_print(&buffer[i]);
+}
+
+void console_read_line(char *buffer, UINTN maxLength) {
+    UINTN length = 0;
+
+    for (;;) {
+        char c = keyboard_read_char();
+
+        if (c == '\n') {
+            console_putchar('\n');
+            break;
+        }
+
+        if (c == '\b') {
+            if (length > 0) {
+                length--;
+                console_putchar('\b');
+            }
+            continue; /* nothing to erase if the line is already empty */
+        }
+
+        if (length + 1 < maxLength) { /* leave room for the null terminator */
+            buffer[length] = c;
+            length++;
+            console_putchar(c);
+        }
+        /* else: buffer full -- silently ignore further characters until Enter/backspace */
+    }
+
+    buffer[length] = 0;
 }

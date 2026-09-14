@@ -3,6 +3,9 @@
 #include "font.h"
 #include "console.h"
 #include "serial.h"
+#include "memmap.h"
+#include "reboot.h"
+#include "gapsh.h"
 
 /* No heap allocator exists yet, so this is a fixed-size static reservation
  * rather than something sized exactly to fit -- generous for a QEMU VM's
@@ -44,17 +47,19 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
         fill_rect(framebuffer, stride, 632, 200, 16, 60, 90, 50, 20); /* stem */
         fill_circle(framebuffer, stride, 668, 210, 22, 30, 130, 30);  /* leaf */
 
-        int exited = 0;
+        int   exited        = 0;
+        UINTN mapSize       = 0;
+        UINTN descriptorSize = 0;
 
         for (int attempt = 0; attempt < 3; attempt++) {
-            UINTN  mapSize           = sizeof(memoryMapBuffer);
             UINTN  mapKey            = 0;
-            UINTN  descriptorSize    = 0;
             UINT32 descriptorVersion = 0;
+
+            mapSize = sizeof(memoryMapBuffer); /* reset each attempt -- GetMemoryMap shrinks it to the size actually used */
 
             /* Not checking this call's own status -- trusting the 16KB buffer
              * above is large enough, rather than also handling EFI_BUFFER_TOO_SMALL. */
-            SystemTable->BootServices->GetMemoryMap(&mapSize, memoryMapBuffer, &mapKey,
+            SystemTable->BootServices->GetMemoryMap(&mapSize, (EFI_MEMORY_DESCRIPTOR *)memoryMapBuffer, &mapKey,
                                                      &descriptorSize, &descriptorVersion);
 
             if (SystemTable->BootServices->ExitBootServices(ImageHandle, mapKey) == EFI_SUCCESS) {
@@ -71,10 +76,14 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
              * stride, width, and height are plain numbers already saved above. */
             fill_rect(framebuffer, stride, 0, 0, (INT32)width, (INT32)height, 20, 160, 60);
 
+            memmap_store((EFI_MEMORY_DESCRIPTOR *)memoryMapBuffer, mapSize, descriptorSize);
+            reboot_init(SystemTable->RuntimeServices);
+
             /* Our own console, drawn with zero UEFI calls -- cursor-tracked,
              * multi-line printing instead of one hand-positioned draw_string call. */
             console_init(framebuffer, stride, width, height);
             console_set_color(255, 255, 255);
+            console_set_background(20, 160, 60); /* matches the green fill above -- scroll/backspace clear to this now, not black */
 
             /* A second, independent output path -- no framebuffer, no GOP,
              * just I/O ports. Visible in the terminal, not the QEMU window. */
@@ -84,14 +93,11 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
             console_print("GENSOKYO KERNEL 0.0.1\n");
             console_print("INDEPENDENT OF FIRMWARE\n");
             console_print("TEXT CONSOLE ONLINE\n");
-            console_print("TESTING SCROLL BELOW\n");
-            console_print("LINE 1\n");
-            console_print("LINE 2\n");
-            console_print("LINE 3\n");
-            console_print("LINE 4\n");
-            console_print("LINE 5\n");
-            console_print("LINE 6\n");
             console_print("* WELCOME TO GENSOKYO *\n");
+
+            /* gapsh's command loop -- never returns. Click the QEMU window
+             * first so it has keyboard focus. */
+            gapsh_run();
         } else {
             SystemTable->ConOut->OutputString(SystemTable->ConOut,
                 (CHAR16 *)L"\r\nExitBootServices failed after 3 attempts.\r\n");

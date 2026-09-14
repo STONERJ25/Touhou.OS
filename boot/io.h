@@ -21,4 +21,14 @@ static inline UINT8 inb(UINT16 port) {
     return result;
 }
 
+/* leaf goes in EAX, subleaf in ECX; all four outputs get overwritten --
+ * what they mean depends entirely on which leaf was requested. */
+static inline void cpuid(UINT32 leaf, UINT32 subleaf, UINT32 *eax, UINT32 *ebx, UINT32 *ecx, UINT32 *edx) {
+    __asm__ volatile (
+        "cpuid"
+        : "=a"(*eax), "=b"(*ebx), "=c"(*ecx), "=d"(*edx)
+        : "a"(leaf), "c"(subleaf)
+    );
+}
+
 #endif /* TOUHOU_IO_H */
