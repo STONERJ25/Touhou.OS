@@ -26,4 +26,4 @@ $driveCode = "if=pflash,format=raw,readonly=on,file=$ovmfCode"
 $driveVars = "if=pflash,format=raw,file=$varsCopy"
 $driveEsp  = "format=raw,file=fat:rw:$espRoot"
 
-qemu-system-x86_64 -machine q35 -m 256M -drive $driveCode -drive $driveVars -drive $driveEsp -net none
+qemu-system-x86_64 -machine q35 -m 256M -drive $driveCode -drive $driveVars -drive $driveEsp -net none -serial stdio

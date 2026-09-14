@@ -1,10 +1,13 @@
 /*
- * Minimal, hand-written UEFI type definitions -- just enough to write to
- * the console via EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL. This is NOT the full
- * UEFI spec: unused function-pointer slots are declared as `void *` so the
- * struct layout (size/order) still matches what real firmware expects,
- * without us having to fully type every service we don't call yet.
+ * Minimal, hand-written UEFI type definitions -- only as much of the real
+ * UEFI spec as this project actually calls (console output, GOP graphics,
+ * memory map / ExitBootServices). Unused function-pointer slots are
+ * declared as `void *` so struct layout (size/order) still matches what
+ * real firmware expects, without fully typing every service we don't use.
  */
+
+#ifndef TOUHOU_UEFI_H
+#define TOUHOU_UEFI_H
 
 typedef unsigned char      UINT8;
 typedef unsigned short     UINT16;
@@ -159,3 +162,5 @@ typedef struct {
 
 #define EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID \
     { 0x9042a9de, 0x23dc, 0x4a38, { 0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a } }
+
+#endif /* TOUHOU_UEFI_H */

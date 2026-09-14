@@ -1,58 +1,15 @@
 #include "uefi.h"
+#include "graphics.h"
+#include "font.h"
+#include "console.h"
+#include "serial.h"
 
-static void print_uint(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *out, UINT32 value) {
-    CHAR16 buffer[11]; /* UINT32 max is 10 digits, plus a null terminator */
-    int i = 10;
-    buffer[10] = 0;
-
-    if (value == 0) {
-        buffer[--i] = '0';
-    } else {
-        while (value > 0) {
-            buffer[--i] = (CHAR16)('0' + (value % 10));
-            value /= 10;
-        }
-    }
-
-    out->OutputString(out, &buffer[i]);
-}
-
-static void put_pixel(EFI_GRAPHICS_OUTPUT_PROTOCOL *gop, UINT32 x, UINT32 y, UINT8 r, UINT8 g, UINT8 b) {
-    UINT32 stride = gop->Mode->Info->PixelsPerScanLine;
-    UINT8 *pixel  = (UINT8 *)(UINTN)gop->Mode->FrameBufferBase + (y * stride + x) * 4;
-
-    pixel[0] = b; /* confirmed BGR order: byte 0 is blue, byte 2 is red */
-    pixel[1] = g;
-    pixel[2] = r;
-    pixel[3] = 0; /* reserved byte, unused */
-}
-
-static void fill_circle(EFI_GRAPHICS_OUTPUT_PROTOCOL *gop, INT32 cx, INT32 cy, INT32 radius, UINT8 r, UINT8 g, UINT8 b) {
-    /* Assumes the circle stays fully on-screen -- no bounds checking against
-     * the real resolution, since we're choosing cx/cy/radius ourselves below. */
-    for (INT32 y = cy - radius; y <= cy + radius; y++) {
-        for (INT32 x = cx - radius; x <= cx + radius; x++) {
-            INT32 dx = x - cx;
-            INT32 dy = y - cy;
-
-            if (dx * dx + dy * dy <= radius * radius) {
-                put_pixel(gop, (UINT32)x, (UINT32)y, r, g, b);
-            }
-        }
-    }
-}
-
-static void fill_rect(EFI_GRAPHICS_OUTPUT_PROTOCOL *gop, INT32 x, INT32 y, INT32 width, INT32 height, UINT8 r, UINT8 g, UINT8 b) {
-    for (INT32 row = y; row < y + height; row++) {
-        for (INT32 col = x; col < x + width; col++) {
-            put_pixel(gop, (UINT32)col, (UINT32)row, r, g, b);
-        }
-    }
-}
+/* No heap allocator exists yet, so this is a fixed-size static reservation
+ * rather than something sized exactly to fit -- generous for a QEMU VM's
+ * memory map (typically well under 100 descriptors). */
+static UINT8 memoryMapBuffer[16384];
 
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
-    (void)ImageHandle; /* required by the UEFI entry-point signature, unused for now */
-
     SystemTable->ConOut->OutputString(SystemTable->ConOut,
         (CHAR16 *)L"TouhouOS\r\nGensokyo Kernel 0.0.1\r\n\r\nWelcome to Gensokyo.\r\n");
 
@@ -78,9 +35,67 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
         print_uint(SystemTable->ConOut, gop->Mode->Info->PixelsPerScanLine);
         SystemTable->ConOut->OutputString(SystemTable->ConOut, (CHAR16 *)L"\r\n");
 
-        fill_circle(gop, 640, 420, 180, 220, 20, 20); /* apple body */
-        fill_rect(gop, 632, 200, 16, 60, 90, 50, 20);  /* stem -- bottom overlaps into the body on purpose */
-        fill_circle(gop, 668, 210, 22, 30, 130, 30);   /* leaf -- same primitive as the body, just small and green */
+        UINT8  *framebuffer = (UINT8 *)(UINTN)gop->Mode->FrameBufferBase;
+        UINT32  stride      = gop->Mode->Info->PixelsPerScanLine;
+        UINT32  width       = gop->Mode->Info->HorizontalResolution;
+        UINT32  height      = gop->Mode->Info->VerticalResolution;
+
+        fill_circle(framebuffer, stride, 640, 420, 180, 220, 20, 20); /* apple body */
+        fill_rect(framebuffer, stride, 632, 200, 16, 60, 90, 50, 20); /* stem */
+        fill_circle(framebuffer, stride, 668, 210, 22, 30, 130, 30);  /* leaf */
+
+        int exited = 0;
+
+        for (int attempt = 0; attempt < 3; attempt++) {
+            UINTN  mapSize           = sizeof(memoryMapBuffer);
+            UINTN  mapKey            = 0;
+            UINTN  descriptorSize    = 0;
+            UINT32 descriptorVersion = 0;
+
+            /* Not checking this call's own status -- trusting the 16KB buffer
+             * above is large enough, rather than also handling EFI_BUFFER_TOO_SMALL. */
+            SystemTable->BootServices->GetMemoryMap(&mapSize, memoryMapBuffer, &mapKey,
+                                                     &descriptorSize, &descriptorVersion);
+
+            if (SystemTable->BootServices->ExitBootServices(ImageHandle, mapKey) == EFI_SUCCESS) {
+                exited = 1;
+                break;
+            }
+            /* MapKey went stale -- something changed memory between GetMemoryMap
+             * and here -- so fetch a fresh map and try again. */
+        }
+
+        if (exited) {
+            /* Boot Services are gone now, permanently, for the rest of this boot --
+             * including ConOut. This line makes zero UEFI calls: framebuffer,
+             * stride, width, and height are plain numbers already saved above. */
+            fill_rect(framebuffer, stride, 0, 0, (INT32)width, (INT32)height, 20, 160, 60);
+
+            /* Our own console, drawn with zero UEFI calls -- cursor-tracked,
+             * multi-line printing instead of one hand-positioned draw_string call. */
+            console_init(framebuffer, stride, width, height);
+            console_set_color(255, 255, 255);
+
+            /* A second, independent output path -- no framebuffer, no GOP,
+             * just I/O ports. Visible in the terminal, not the QEMU window. */
+            serial_init();
+            serial_write("TouhouOS: independent of firmware. Serial output online.\r\n");
+
+            console_print("GENSOKYO KERNEL 0.0.1\n");
+            console_print("INDEPENDENT OF FIRMWARE\n");
+            console_print("TEXT CONSOLE ONLINE\n");
+            console_print("TESTING SCROLL BELOW\n");
+            console_print("LINE 1\n");
+            console_print("LINE 2\n");
+            console_print("LINE 3\n");
+            console_print("LINE 4\n");
+            console_print("LINE 5\n");
+            console_print("LINE 6\n");
+            console_print("* WELCOME TO GENSOKYO *\n");
+        } else {
+            SystemTable->ConOut->OutputString(SystemTable->ConOut,
+                (CHAR16 *)L"\r\nExitBootServices failed after 3 attempts.\r\n");
+        }
     }
 
     for (;;) {
