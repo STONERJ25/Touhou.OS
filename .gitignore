@@ -1,0 +1,17 @@
+# Build output
+build/
+*.o
+*.obj
+*.img
+*.efi
+*.pdb
+
+# Project notes
+docs/
+TOUHOU_OS_CONTEXT.md
+
+# Editor / OS cruft
+.vs/
+*.user
+Thumbs.db
+.DS_Store
