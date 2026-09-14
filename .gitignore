@@ -9,6 +9,8 @@ build/
 # Project notes
 docs/
 TOUHOU_OS_CONTEXT.md
+CLAUDE.md
+AGENTS.md
 
 # Editor / OS cruft
 .vs/
